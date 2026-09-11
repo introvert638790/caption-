@@ -15,8 +15,6 @@ from bot.handlers import (
     job_control,
     job_status,
     keep_alive,
-    post_manager_control,
-    post_manager_setup,
     range_setup,
     start,
     words_setup,
@@ -53,8 +51,6 @@ def create_dispatcher(owner_id: int) -> Dispatcher:
     dispatcher.include_router(words_setup.router)
     dispatcher.include_router(job_control.router)
     dispatcher.include_router(job_status.router)
-    dispatcher.include_router(post_manager_setup.router)
-    dispatcher.include_router(post_manager_control.router)
     dispatcher.include_router(keep_alive.router)
     dispatcher.include_router(help.router)
 

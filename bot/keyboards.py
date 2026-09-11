@@ -18,7 +18,6 @@ def main_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="📂 Caption Manager", callback_data="menu:caption_manager")],
         [InlineKeyboardButton(text="🎯 Set Processing Range", callback_data="menu:set_range")],
         [InlineKeyboardButton(text="▶️ Preview & Run", callback_data="menu:preview")],
-        [InlineKeyboardButton(text="📮 Post Manager", callback_data="menu:post_manager")],
         [InlineKeyboardButton(text="📊 Job Status", callback_data="menu:status")],
         [InlineKeyboardButton(text="🟢 Keep Alive", callback_data="menu:keep_alive")],
         [InlineKeyboardButton(text="⚙️ Settings", callback_data="menu:settings")],
@@ -151,8 +150,8 @@ def help_menu() -> InlineKeyboardMarkup:
     """Help index screen -- lists each guide, plus Main Menu (this is the only help screen with Main Menu, not Back to Help)."""
     buttons = [
         [InlineKeyboardButton(text="📖 About This Bot", callback_data="help:about")],
-        [InlineKeyboardButton(text="🔤 Caption Manager Guide", callback_data="help:caption_manager")],
-        [InlineKeyboardButton(text="📮 Post Manager Guide", callback_data="help:post_manager")],
+        [InlineKeyboardButton(text="🔤 Caption Manager Guide — Basics", callback_data="help:caption_manager")],
+        [InlineKeyboardButton(text="🧩 Caption Manager Guide — Advanced", callback_data="help:caption_manager_advanced")],
         [InlineKeyboardButton(text="🟢 Keep Alive & Settings Guide", callback_data="help:keep_alive_settings")],
         [InlineKeyboardButton(text="🏠 Main Menu", callback_data="menu:root")],
     ]
@@ -230,38 +229,6 @@ def confirm_stop() -> InlineKeyboardMarkup:
 
 
 
-
-
-def post_manager_menu() -> InlineKeyboardMarkup:
-    """Post Manager root submenu."""
-    buttons = [
-        [InlineKeyboardButton(text="🎯 Configure Target", callback_data="pm:configure_target")],
-        [InlineKeyboardButton(text="🗂️ Delete Range", callback_data="pm:set_range")],
-        [InlineKeyboardButton(text="👁️ Preview", callback_data="pm:preview")],
-        [InlineKeyboardButton(text="📊 Status", callback_data="menu:status")],
-        [InlineKeyboardButton(text="🏠 Main Menu", callback_data="menu:root")],
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
-def post_manager_target_type_menu() -> InlineKeyboardMarkup:
-    """Choose which kind of target to configure for Post Manager."""
-    buttons = [
-        [InlineKeyboardButton(text="📡 Channel", callback_data="pm:target:channel")],
-        [InlineKeyboardButton(text="👥 Normal Group", callback_data="pm:target:group")],
-        [InlineKeyboardButton(text="🗂️ Forum Topic", callback_data="pm:target:forum_topic")],
-        [InlineKeyboardButton(text="🏠 Main Menu", callback_data="menu:root")],
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
-def confirm_delete_run(preview_count: int) -> InlineKeyboardMarkup:
-    """Preview confirmation gate before a Post Manager delete run starts."""
-    buttons = [
-        [InlineKeyboardButton(text=f"▶️ Start Delete ({preview_count} messages)", callback_data="pm:job:start")],
-        [InlineKeyboardButton(text="❌ Cancel", callback_data="menu:root")],
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def settings_menu() -> InlineKeyboardMarkup:

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from dataclasses import dataclass
 from enum import Enum
 
@@ -301,86 +300,3 @@ async def throttle(delay_seconds: float | None = None) -> None:
     for any call site not explicitly updated.
     """
     await asyncio.sleep(delay_seconds if delay_seconds is not None else DEFAULT_INTER_MESSAGE_DELAY_SECONDS)
-
-
-class DeleteOutcome(str, Enum):
-    """Result of attempting to delete a message (Post Manager)."""
-
-    OK = "ok"
-    NOT_FOUND = "not_found"  # already deleted / never existed
-    PERMISSION_ERROR = "permission_error"
-    OTHER_ERROR = "other_error"
-
-
-@dataclass(frozen=True)
-class DeleteResult:
-    outcome: DeleteOutcome
-    error_detail: str | None = None
-
-
-async def delete_message_safe(bot: Bot, chat_id: int, message_id: int) -> DeleteResult:
-    """
-    Delete a single message (Post Manager). Distinguishes "already gone"
-    (Skipped upstream) from permission errors (Failed upstream), mirroring
-    the same classification pattern used for caption read/write.
-    """
-    try:
-        async def _delete():
-            return await bot.delete_message(chat_id=chat_id, message_id=message_id)
-
-        await _retry_with_backoff(_delete)
-        return DeleteResult(outcome=DeleteOutcome.OK)
-
-    except TelegramBadRequest as exc:
-        classification = _classify_api_error(exc)
-        outcome_map = {
-            ReadOutcome.NOT_FOUND: DeleteOutcome.NOT_FOUND,
-            ReadOutcome.PERMISSION_ERROR: DeleteOutcome.PERMISSION_ERROR,
-            ReadOutcome.OTHER_ERROR: DeleteOutcome.OTHER_ERROR,
-        }
-        return DeleteResult(outcome=outcome_map[classification], error_detail=str(exc))
-
-    except TelegramAPIError as exc:
-        return DeleteResult(outcome=DeleteOutcome.OTHER_ERROR, error_detail=str(exc))
-
-
-@dataclass(frozen=True)
-class ParsedMessageLink:
-    """Result of parsing a t.me message link for Post Manager group/topic setup."""
-
-    chat_id: int
-    message_id: int
-    thread_id: int | None = None
-
-
-def parse_message_link(link: str) -> ParsedMessageLink | None:
-    """
-    Parse a Telegram private-chat message link, used for Post Manager's
-    Normal Group / Forum Topic range setup (Bot API cannot expose original
-    message IDs for forwarded group/topic posts, so links are the only
-    reliable source -- see architecture decision).
-
-    Supports:
-      https://t.me/c/<internal_id>/<message_id>
-      https://t.me/c/<internal_id>/<thread_id>/<message_id>  (forum topic)
-
-    `internal_id` in the link is the chat_id without the "-100" channel/
-    supergroup prefix; this function restores that prefix to produce the
-    real chat_id Bot API calls expect.
-    """
-    match = re.match(
-        r"^https?://t\.me/c/(\d+)/(\d+)(?:/(\d+))?/?$",
-        link.strip(),
-    )
-    if match is None:
-        return None
-
-    internal_id, first_num, second_num = match.groups()
-    chat_id = int(f"-100{internal_id}")
-
-    if second_num is not None:
-        # Three-segment link: .../<internal_id>/<thread_id>/<message_id>
-        return ParsedMessageLink(chat_id=chat_id, message_id=int(second_num), thread_id=int(first_num))
-
-    # Two-segment link: .../<internal_id>/<message_id>
-    return ParsedMessageLink(chat_id=chat_id, message_id=int(first_num), thread_id=None)

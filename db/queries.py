@@ -36,8 +36,6 @@ from db.models import (
     MessageLogEntry,
     MessageLogStatus,
     NewJob,
-    PostManagerConfig,
-    PostManagerTargetType,
     Settings,
     TaskType,
 )
@@ -638,72 +636,6 @@ async def set_keep_alive_config(conn: asyncpg.Pool, mode: str, interval_seconds:
         """,
         mode,
         interval_seconds,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Post Manager config (fully independent of Caption Manager)
-# ---------------------------------------------------------------------------
-
-async def get_post_manager_config(conn: asyncpg.Pool) -> PostManagerConfig:
-    row = await conn.fetchrow(
-        """
-        SELECT pm_target_chat_id, pm_target_type, pm_target_title, pm_thread_id,
-               pm_range_start_message_id, pm_range_end_message_id
-        FROM bot_settings WHERE id = 1
-        """
-    )
-    if row is None:
-        return PostManagerConfig(
-            target_chat_id=None, target_type=None, target_title=None,
-            thread_id=None, range_start_message_id=None, range_end_message_id=None,
-        )
-    return PostManagerConfig(
-        target_chat_id=row["pm_target_chat_id"],
-        target_type=PostManagerTargetType(row["pm_target_type"]) if row["pm_target_type"] else None,
-        target_title=row["pm_target_title"],
-        thread_id=row["pm_thread_id"],
-        range_start_message_id=row["pm_range_start_message_id"],
-        range_end_message_id=row["pm_range_end_message_id"],
-    )
-
-
-async def set_post_manager_target(
-    conn: asyncpg.Pool,
-    target_chat_id: int,
-    target_type: PostManagerTargetType,
-    target_title: str,
-    thread_id: int | None = None,
-) -> None:
-    """Persist Post Manager's target, independent of its range and of Caption Manager entirely."""
-    await conn.execute(
-        """
-        INSERT INTO bot_settings (id, pm_target_chat_id, pm_target_type, pm_target_title, pm_thread_id)
-        VALUES (1, $1, $2, $3, $4)
-        ON CONFLICT (id) DO UPDATE
-            SET pm_target_chat_id = EXCLUDED.pm_target_chat_id,
-                pm_target_type = EXCLUDED.pm_target_type,
-                pm_target_title = EXCLUDED.pm_target_title,
-                pm_thread_id = EXCLUDED.pm_thread_id
-        """,
-        target_chat_id,
-        target_type.value,
-        target_title,
-        thread_id,
-    )
-
-
-async def set_post_manager_range(conn: asyncpg.Pool, range_start_message_id: int, range_end_message_id: int) -> None:
-    await conn.execute(
-        """
-        INSERT INTO bot_settings (id, pm_range_start_message_id, pm_range_end_message_id)
-        VALUES (1, $1, $2)
-        ON CONFLICT (id) DO UPDATE
-            SET pm_range_start_message_id = EXCLUDED.pm_range_start_message_id,
-                pm_range_end_message_id = EXCLUDED.pm_range_end_message_id
-        """,
-        range_start_message_id,
-        range_end_message_id,
     )
 
 

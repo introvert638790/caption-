@@ -6,19 +6,13 @@ worker, Render free Web Service only). Progress is persisted to the DB after
 every single message -- not batched -- so a crash/restart can resume exactly
 from `cursor_message_id + 1` without losing or double-counting work.
 
-Supports two task types (Job.task_type):
-  - caption_edit: read -> transform -> write caption (original behavior,
-    unchanged).
-  - post_delete: delete message directly (Post Manager). No content
-    inspection needed, so no scratch-chat/forwardMessage step -- just a
-    direct deleteMessage call per message_id.
+Handles the caption_edit task type (Job.task_type): read -> transform ->
+write caption.
 
 Idempotency note: caption transforms (link removal, whole-word replace) are
 naturally idempotent -- re-running them on an already-cleaned caption is a
-no-op. Message deletion is also naturally idempotent -- deleting an
-already-deleted message just returns "not found", handled as Skipped. This
-means at-least-once processing (possible if the process dies between a
-successful write/delete and the progress-persist call) is safe in both cases.
+no-op. This means at-least-once processing (possible if the process dies
+between a successful write and the progress-persist call) is safe.
 """
 
 from __future__ import annotations
@@ -33,7 +27,7 @@ from aiogram import Bot
 
 from core import telegram_ops
 from core.caption_engine import CaptionEntity, transform_caption
-from core.telegram_ops import DeleteOutcome, ReadOutcome, WriteOutcome
+from core.telegram_ops import ReadOutcome, WriteOutcome
 from db import queries
 from db.models import Job, JobStatus, MessageLogStatus, TaskType
 
@@ -54,10 +48,7 @@ PROGRESS_UPDATE_INTERVAL = 20
 
 # After every PROGRESS_UPDATE_INTERVAL processed messages, pause for this
 # long before continuing -- separate from the existing per-message
-# `delay_seconds` throttle. Set to 0 to disable. Caption Manager only
-# (post_delete jobs never pass a nonzero value from job_control.py, so
-# Post Manager's timing is unaffected unless this constant itself is
-# changed for both task types).
+# `delay_seconds` throttle. Set to 0 to disable. Caption Manager only.
 BATCH_COOLDOWN_SECONDS = 30
 
 
@@ -88,8 +79,7 @@ class ProgressSnapshot:
     task_type: TaskType = TaskType.CAPTION_EDIT
     # "editing" (default) or "sleeping" -- lets the bot layer render a
     # distinct status line during the batch-cooldown pause. Unused by any
-    # existing caller, so existing behavior (post_delete, or any callback
-    # not yet updated to read it) is unaffected.
+    # existing caller, so existing behavior is unaffected.
     status: str = "editing"
     sleeping_seconds: int = 0
 
@@ -102,13 +92,6 @@ class PreviewResult:
     would_edit_count: int
     would_skip_count: int
     would_fail_count: int
-
-
-@dataclass(frozen=True)
-class DeletePreviewResult:
-    """Result of a stateless preview for a Post Manager delete range."""
-
-    total_scanned: int
 
 
 async def run_dry_run_preview(
@@ -195,17 +178,6 @@ async def run_dry_run_preview(
     )
 
 
-def build_delete_preview(range_start_message_id: int, range_end_message_id: int) -> DeletePreviewResult:
-    """
-    Post Manager preview is a simple count -- unlike Caption Manager, there
-    is no content to inspect before deciding whether a delete would apply
-    (a message either exists or it doesn't, discovered only at delete time),
-    so no scan/read calls are made here at all.
-    """
-    total = range_end_message_id - range_start_message_id + 1
-    return DeletePreviewResult(total_scanned=total)
-
-
 class JobRunner:
     """
     Drives a single job's message-by-message processing loop.
@@ -227,10 +199,8 @@ class JobRunner:
         Args:
             pool: shared asyncpg connection pool.
             bot: aiogram Bot instance.
-            scratch_chat_id: private chat used for forwardMessage-based reads
-                (caption_edit jobs only; unused for post_delete).
-            delay_seconds: configurable throttle delay shared by both task
-                types (Settings.action_delay_seconds).
+            scratch_chat_id: private chat used for forwardMessage-based reads.
+            delay_seconds: configurable throttle delay (Settings.action_delay_seconds).
             progress_callback: optional async callable(ProgressSnapshot) -> None,
                 invoked every PROGRESS_UPDATE_INTERVAL messages so the bot
                 layer can push a Telegram message/edit to the user.
@@ -267,9 +237,7 @@ class JobRunner:
 
         # Immediate 0/N (or resumed-cursor/N) snapshot before any message is
         # processed, so the UI shows progress right away instead of only
-        # after the first PROGRESS_UPDATE_INTERVAL batch. No-op for
-        # post_delete (progress_callback is only ever passed for
-        # caption_edit today; this stays generic/safe either way).
+        # after the first PROGRESS_UPDATE_INTERVAL batch.
         if self._progress_callback is not None:
             initial_snapshot = ProgressSnapshot(
                 current_message_id=start_id - 1,
@@ -289,13 +257,9 @@ class JobRunner:
                 current_job = await queries.get_job(self._pool, current_job.id)
                 return RunOutcome(stop_reason=StopReason.STOPPED_BY_USER, final_job=current_job)
 
-            if current_job.task_type == TaskType.POST_DELETE:
-                outcome, processed_delta = await self._process_one_message_delete(current_job, message_id)
-                edited_delta = 0
-            else:
-                outcome = await self._process_one_message(current_job, message_id)
-                processed_delta = 0
-                edited_delta = 1 if outcome == MessageLogStatus.EDITED else 0
+            outcome = await self._process_one_message(current_job, message_id)
+            processed_delta = 0
+            edited_delta = 1 if outcome == MessageLogStatus.EDITED else 0
 
             # Persist progress after this single message, unconditionally.
             await queries.update_job_progress(
@@ -467,34 +431,6 @@ class JobRunner:
         return await self._log_and_return(
             job.id, message_id, MessageLogStatus.FAILED, write_result.error_detail or "unknown write error"
         )
-
-    async def _process_one_message_delete(self, job: Job, message_id: int) -> tuple[MessageLogStatus, int]:
-        """
-        Delete a single message_id (post_delete). No content inspection
-        needed -- direct deleteMessage call. Returns (status, processed_delta)
-        where processed_delta is 1 only on a successful delete.
-        """
-        delete_result = await telegram_ops.delete_message_safe(
-            bot=self._bot,
-            chat_id=job.channel_chat_id,
-            message_id=message_id,
-        )
-
-        if delete_result.outcome == DeleteOutcome.OK:
-            status = await self._log_and_return(job.id, message_id, MessageLogStatus.EDITED, None)
-            return status, 1
-
-        if delete_result.outcome == DeleteOutcome.NOT_FOUND:
-            status = await self._log_and_return(
-                job.id, message_id, MessageLogStatus.SKIPPED, "message not found / already deleted"
-            )
-            return status, 0
-
-        status = await self._log_and_return(
-            job.id, message_id, MessageLogStatus.FAILED,
-            delete_result.error_detail or "delete failed",
-        )
-        return status, 0
 
     async def _log_and_return(
         self,

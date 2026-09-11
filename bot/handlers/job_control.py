@@ -67,13 +67,6 @@ class DelaySetupStates(StatesGroup):
 
 
 def _format_progress(snapshot: ProgressSnapshot) -> str:
-    if snapshot.task_type == TaskType.POST_DELETE:
-        return (
-            f"⏳ Progress: {snapshot.processed_count}/{snapshot.total_count}\n"
-            f"✅ Deleted: {snapshot.edited_count}\n"
-            f"⏭️ Skipped: {snapshot.skipped_count}\n"
-            f"❌ Failed: {snapshot.failed_count}"
-        )
     return (
         f"⏳ Progress: {snapshot.processed_count}/{snapshot.total_count}\n"
         f"✅ Edited: {snapshot.edited_count}\n"
@@ -1044,31 +1037,6 @@ async def cb_resume_job(callback: CallbackQuery) -> None:
         await callback.answer("No paused job to resume.", show_alert=True)
         return
 
-    if active.task_type != TaskType.CAPTION_EDIT:
-        # Post Manager (post_delete) resume is out of scope for this phase --
-        # preserve the exact prior behavior (send a new message) untouched.
-        async def progress_callback(snapshot: ProgressSnapshot) -> None:
-            try:
-                await callback.bot.send_message(
-                    chat_id=callback.from_user.id,
-                    text=_format_progress(snapshot),
-                )
-            except Exception:
-                pass
-
-        try:
-            job = await job_manager.resume_job(active.id, progress_callback=progress_callback)
-        except JobManagerError as exc:
-            await callback.answer(str(exc), show_alert=True)
-            return
-
-        await callback.message.edit_text(
-            f"▶️ Job {job.id} resumed from message {job.cursor_message_id + 1}.",
-            reply_markup=keyboards.job_controls(is_paused=False),
-        )
-        await callback.answer()
-        return
-
     progress_chat_id = callback.from_user.id
     progress_message_id = callback.message.message_id
     job_start_monotonic = time.monotonic()
@@ -1148,7 +1116,7 @@ async def cb_stop_job_confirmed(callback: CallbackQuery) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Settings (Delay) -- shared by Caption Manager and Post Manager.
+# Settings (Delay)
 # ---------------------------------------------------------------------------
 
 @router.callback_query(F.data == "menu:settings")

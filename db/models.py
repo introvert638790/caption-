@@ -61,15 +61,6 @@ class TaskType(str, Enum):
     """Distinguishes what kind of job a `jobs` row represents."""
 
     CAPTION_EDIT = "caption_edit"
-    POST_DELETE = "post_delete"
-
-
-class PostManagerTargetType(str, Enum):
-    """Which kind of chat Post Manager is currently targeting."""
-
-    CHANNEL = "channel"
-    GROUP = "group"
-    FORUM_TOPIC = "forum_topic"
 
 
 @dataclass(frozen=True)
@@ -158,25 +149,9 @@ class InjectorConfig:
 
 @dataclass(frozen=True)
 class Settings:
-    """Global bot settings shared across Caption Manager and Post Manager."""
+    """Global bot settings for Caption Manager."""
 
     action_delay_seconds: float
-
-
-@dataclass(frozen=True)
-class PostManagerConfig:
-    """
-    Persisted Post Manager target + range configuration. Fully independent
-    of Caption Manager's ChannelConfig/JobConfig -- separate columns,
-    separate setup flow.
-    """
-
-    target_chat_id: int | None
-    target_type: PostManagerTargetType | None
-    target_title: str | None
-    thread_id: int | None
-    range_start_message_id: int | None
-    range_end_message_id: int | None
 
 
 @dataclass(frozen=True)
@@ -206,7 +181,7 @@ class Job:
     edited_count: int
     skipped_count: int
     failed_count: int
-    processed_count: int  # generic counter used by Post Manager (e.g. deleted); unused by Caption Manager
+    processed_count: int  # generic counter; unused by Caption Manager today
     created_at: datetime
     updated_at: datetime
 

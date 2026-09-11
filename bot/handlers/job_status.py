@@ -1,7 +1,5 @@
 """
 Job status display: current/most-recent job progress and recent log entries.
-Shared by both Caption Manager (caption_edit) and Post Manager (post_delete)
-task types -- one Job Status screen for both, per architecture.
 """
 
 from __future__ import annotations
@@ -14,7 +12,7 @@ from aiogram.types import CallbackQuery
 from bot import keyboards
 from db import queries
 from db.connection import get_pool
-from db.models import JobStatus, MessageLogStatus, TaskType
+from db.models import JobStatus, MessageLogStatus
 
 router = Router(name="job_status")
 
@@ -43,9 +41,8 @@ async def cb_job_status(callback: CallbackQuery) -> None:
         await callback.answer()
         return
 
-    is_delete = job.task_type == TaskType.POST_DELETE
-    operation_label = "Post Deletion" if is_delete else "Caption Processing"
-    edited_label = "Deleted" if is_delete else "Edited"
+    operation_label = "Caption Processing"
+    edited_label = "Edited"
 
     processed = job.edited_count + job.skipped_count + job.failed_count
     remaining = max(job.total_count - processed, 0)
@@ -65,11 +62,8 @@ async def cb_job_status(callback: CallbackQuery) -> None:
         "",
     ]
 
-    if is_delete:
-        text_lines.append(f"Range: {job.range_start_message_id} \u2192 {job.range_end_message_id}")
-    else:
-        text_lines.append(f"Find: {job.find_word} \u2192 Replace: {job.replace_word}")
-        text_lines.append(f"Range: {job.range_start_message_id} \u2192 {job.range_end_message_id}")
+    text_lines.append(f"Find: {job.find_word} \u2192 Replace: {job.replace_word}")
+    text_lines.append(f"Range: {job.range_start_message_id} \u2192 {job.range_end_message_id}")
 
     text = "\n".join(text_lines)
 
